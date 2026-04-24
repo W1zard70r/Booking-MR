@@ -41,6 +41,7 @@ func main() {
 	schedUC := usecases.NewScheduleUseCase(repo.Schedule, repo.Slot)
 	slotUC := usecases.NewSlotUseCase(repo.Slot, repo.Room)
 	bookUC := usecases.NewBookingUseCase(repo.Booking, repo.Slot)
+	testUC := usecases.NewTestUseCase(repo.Test)
 
 	// Запуск фонового воркера для скользящего окна слотов
 	go startSlotWorker(schedUC)
@@ -55,12 +56,20 @@ func main() {
 		BookingUC:  bookUC,
 		JWTSecret:  jwtSecret,
 		UserUC:     userUC,
+		TestUC:     testUC,
 	}
 
 	// Роутер
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	// --- ЛР1 и ЛР2: Тестовые эндпоинты ---
+	r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello!"))
+	})
+	r.Post("/dbtest", handler.HandleDBTest)
+	// -------------------------------------
 
 	// Публичные эндпоинты
 	r.Get("/_info", handler.HandleInfo)

@@ -22,6 +22,7 @@ type Repository struct {
 	Slot     SlotRepository
 	Booking  BookingRepository
 	User     UserRepository
+	Test     TestRepository
 }
 
 // New создает новый экземпляр Repository
@@ -32,6 +33,7 @@ func New(db *sql.DB) *Repository {
 		Slot:     NewSlotPG(db),
 		Booking:  NewBookingPG(db),
 		User:     NewUserPG(db),
+		Test:     NewTestPG(db),
 	}
 }
 
@@ -65,4 +67,8 @@ type BookingRepository interface {
 	GetList(ctx context.Context, limit, offset int) ([]models.Booking, int, error)
 	// GetMyFuture - для юзера (только его и только будущие)
 	GetMyFuture(ctx context.Context, userID string, now time.Time) ([]models.Booking, error)
+}
+
+type TestRepository interface {
+	SaveMessage(ctx context.Context, msg string) error
 }

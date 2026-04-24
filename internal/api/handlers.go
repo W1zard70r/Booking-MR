@@ -26,6 +26,7 @@ type API struct {
 	BookingUC  usecases.BookingUseCase
 	JWTSecret  string
 	UserUC     usecases.UserUseCase
+	TestUC     usecases.TestUseCase
 }
 
 // --- СЛУЖЕБНЫЕ ---
@@ -288,4 +289,23 @@ func (api *API) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, TokenResp{Token: token})
+}
+
+// -- Test --
+type DBTestReq struct {
+	Message string `json:"message"`
+}
+
+func (api *API) HandleDBTest(w http.ResponseWriter, r *http.Request) {
+	var req DBTestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid body")
+		return
+	}
+
+	if err := api.TestUC.Save(r.Context(), req.Message); err != nil {
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 }
