@@ -1,4 +1,3 @@
-# Бинарники Go
 /bin/
 *.exe
 *.exe~
@@ -8,19 +7,16 @@
 *.test
 *.out
 main
+server
 
-# Переменные окружения 
 .env
 
-# Папки IDE и редакторов
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# Локальная база Docker
 pgdata/
 
-# Временные файлы
 tmp/

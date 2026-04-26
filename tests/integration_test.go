@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"room-booking/internal/api"
-	"room-booking/internal/repository"
-	"room-booking/internal/usecases"
+	"backend/internal/api"
+	"backend/internal/repository"
+	"backend/internal/usecases"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"

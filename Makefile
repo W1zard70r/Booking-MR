@@ -23,6 +23,14 @@ migrate:
 	docker run --rm -v $(CURDIR)/migrations:/migrations --network host migrate/migrate \
 		-path=/migrations/ -database "$(DB_URL)" up
 
+migrate-down:
+	docker run --rm -v $(CURDIR)/migrations:/migrations --network host migrate/migrate \
+		-path=/migrations/ -database "$(DB_URL)" down -all
+
+migrate-down1:
+	docker run --rm -v $(CURDIR)/migrations:/migrations --network host migrate/migrate \
+		-path=/migrations/ -database "$(DB_URL)" down 1
+
 seed:
 	docker exec -i booking_db psql -U $(DB_USER) -d $(DB_NAME) < scripts/seed.sql
 

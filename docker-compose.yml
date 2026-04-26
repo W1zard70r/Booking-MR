@@ -5,8 +5,6 @@ services:
     image: postgres:15-alpine
     container_name: booking_db
     restart: always
-    ports:
-      - "${DB_PORT:-5437}:5432"
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
@@ -19,12 +17,12 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    container_name: booking_app
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: booking_backend
     restart: on-failure
-    ports:
-      - "${SERVER_PORT:-8080}:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -34,9 +32,19 @@ services:
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-password}
       - DB_NAME=${DB_NAME:-booking}
-      - DB_SSLMODE=${DB_SSLMODE:-disable}
-      - SERVER_PORT=${SERVER_PORT:-8080}
       - JWT_SECRET=${JWT_SECRET:-supersecret}
+      - SERVER_PORT=8080
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: booking_frontend
+    restart: on-failure
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   pgdata:
