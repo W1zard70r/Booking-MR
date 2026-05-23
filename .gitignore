@@ -6,8 +6,9 @@
 *.dylib
 *.test
 *.out
-main
-server
+/main
+/server
+
 
 .env
 
