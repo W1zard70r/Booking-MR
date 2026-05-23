@@ -8,8 +8,7 @@
 *.out
 main
 server
-!backend/cmd/server/
-!backend/cmd/server/main.go
+
 
 .env
 
