@@ -3,6 +3,8 @@ package usecases
 import (
 	"context"
 	"errors"
+	"log/slog"
+
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 )
@@ -20,12 +22,14 @@ type ScheduleUseCase interface {
 type scheduleUC struct {
 	scheduleRepo repository.ScheduleRepository
 	slotRepo     repository.SlotRepository
+	logger       *slog.Logger
 }
 
-func NewScheduleUseCase(schedRepo repository.ScheduleRepository, slotRepo repository.SlotRepository) ScheduleUseCase {
+func NewScheduleUseCase(schedRepo repository.ScheduleRepository, slotRepo repository.SlotRepository, logger ...*slog.Logger) ScheduleUseCase {
 	return &scheduleUC{
 		scheduleRepo: schedRepo,
 		slotRepo:     slotRepo,
+		logger:       resolveLogger(logger),
 	}
 }
 
@@ -34,15 +38,14 @@ func (uc *scheduleUC) CreateSchedule(ctx context.Context, schedule *models.Sched
 		return ErrInvalidDayOfWeek
 	}
 
+	generatedSlots := 0
 	for _, day := range schedule.DaysOfWeek {
-		// Вызываем репозиторий с новыми аргументами
 		id, err := uc.scheduleRepo.Create(ctx, schedule.RoomID, day, schedule.StartTime, schedule.EndTime)
 		if err != nil {
 			return err
 		}
-		schedule.ID = id // Сохраняем последний ID (или можно собирать все)
+		schedule.ID = id
 
-		// Генерация слотов
 		slots, err := GenerateSlots(schedule.RoomID, day, schedule.StartTime, schedule.EndTime, 30)
 		if err != nil {
 			return ErrInvalidTimeRange
@@ -52,8 +55,21 @@ func (uc *scheduleUC) CreateSchedule(ctx context.Context, schedule *models.Sched
 			if err := uc.slotRepo.BulkInsert(ctx, slots); err != nil {
 				return err
 			}
+			generatedSlots += len(slots)
 		}
 	}
+
+	uc.logger.InfoContext(
+		ctx,
+		"schedule_created",
+		"schedule_id", schedule.ID,
+		"room_id", schedule.RoomID,
+		"days_of_week", schedule.DaysOfWeek,
+		"start_time", schedule.StartTime,
+		"end_time", schedule.EndTime,
+		"generated_slots", generatedSlots,
+	)
+
 	return nil
 }
 
@@ -65,13 +81,11 @@ func (uc *scheduleUC) SyncAllSlots(ctx context.Context) error {
 
 	for _, s := range schedules {
 		for _, day := range s.DaysOfWeek {
-			// Генерируем слоты на 30 дней вперед от текущего момента
 			slots, err := GenerateSlots(s.RoomID, day, s.StartTime, s.EndTime, 30)
 			if err != nil {
 				continue
 			}
 			if len(slots) > 0 {
-				// BulkInsert проигнорирует те, что уже есть в базе (ON CONFLICT DO NOTHING)
 				_ = uc.slotRepo.BulkInsert(ctx, slots)
 			}
 		}

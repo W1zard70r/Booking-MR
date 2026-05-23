@@ -34,6 +34,8 @@ services:
       - DB_NAME=${DB_NAME:-booking}
       - JWT_SECRET=${JWT_SECRET:-supersecret}
       - SERVER_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
 
   frontend:
     build:
