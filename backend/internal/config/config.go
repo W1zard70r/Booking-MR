@@ -10,6 +10,7 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Logging  LoggingConfig
+	RabbitMQ RabbitMQConfig
 }
 
 type ServerConfig struct {
@@ -34,6 +35,11 @@ type LoggingConfig struct {
 	Format string
 }
 
+type RabbitMQConfig struct {
+	URL                string
+	BookingEventsQueue string
+}
+
 func Load() Config {
 	return Config{
 		Server: ServerConfig{
@@ -53,6 +59,10 @@ func Load() Config {
 		Logging: LoggingConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
+		},
+		RabbitMQ: RabbitMQConfig{
+			URL:                getEnv("RABBITMQ_URL", ""),
+			BookingEventsQueue: getEnv("RABBITMQ_BOOKING_EVENTS_QUEUE", "booking-events"),
 		},
 	}
 }

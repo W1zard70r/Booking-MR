@@ -12,6 +12,7 @@ import (
 
 	"room-booking/internal/api"
 	"room-booking/internal/config"
+	"room-booking/internal/events"
 	"room-booking/internal/logging"
 	"room-booking/internal/repository"
 	"room-booking/internal/usecases"
@@ -51,10 +52,39 @@ func main() {
 	}
 
 	repo := repository.New(db)
+	eventPublisher := events.Publisher(events.NoopPublisher{})
+	if cfg.RabbitMQ.URL != "" {
+		rabbitPublisher, err := events.NewRabbitMQPublisher(cfg.RabbitMQ.URL, cfg.RabbitMQ.BookingEventsQueue)
+		if err != nil {
+			logger.Error("rabbitmq_publisher_init_failed", "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := rabbitPublisher.Close(); err != nil {
+				logger.Error("rabbitmq_publisher_close_failed", "error", err)
+			}
+		}()
+		eventPublisher = rabbitPublisher
+
+		closeConsumer, err := events.StartBookingEventConsumer(context.Background(), cfg.RabbitMQ.URL, cfg.RabbitMQ.BookingEventsQueue, logger)
+		if err != nil {
+			logger.Error("rabbitmq_consumer_init_failed", "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := closeConsumer(); err != nil {
+				logger.Error("rabbitmq_consumer_close_failed", "error", err)
+			}
+		}()
+		logger.Info("rabbitmq_enabled", "queue", cfg.RabbitMQ.BookingEventsQueue)
+	} else {
+		logger.Info("rabbitmq_disabled", "reason", "RABBITMQ_URL is empty")
+	}
+
 	roomUC := usecases.NewRoomUseCase(repo.Room, logger)
 	scheduleUC := usecases.NewScheduleUseCase(repo.Schedule, repo.Slot, logger)
 	slotUC := usecases.NewSlotUseCase(repo.Slot, repo.Room)
-	bookingUC := usecases.NewBookingUseCase(repo.Booking, repo.Slot, logger)
+	bookingUC := usecases.NewBookingUseCase(repo.Booking, repo.Slot, eventPublisher, logger)
 	userUC := usecases.NewUserUseCase(repo.User, cfg.JWT.Secret, logger)
 	testUC := usecases.NewTestUseCase(repo.Test)
 
