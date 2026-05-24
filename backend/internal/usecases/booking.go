@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"room-booking/internal/events"
+	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 )
@@ -111,6 +112,7 @@ func (uc *bookingUC) CreateBooking(ctx context.Context, userID, slotID string, c
 	}); err != nil {
 		uc.logger.ErrorContext(ctx, "booking_event_publish_failed", "event_type", events.BookingCreatedEvent, "booking_id", booking.ID, "error", err)
 	}
+	metrics.RecordBusinessEvent("booking_created")
 
 	return booking, nil
 }
@@ -156,6 +158,7 @@ func (uc *bookingUC) CancelBooking(ctx context.Context, userID, bookingID string
 	}); err != nil {
 		uc.logger.ErrorContext(ctx, "booking_event_publish_failed", "event_type", events.BookingCancelledEvent, "booking_id", booking.ID, "error", err)
 	}
+	metrics.RecordBusinessEvent("booking_cancelled")
 
 	return booking, nil
 }

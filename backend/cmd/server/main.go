@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -228,6 +229,7 @@ func newRouter(appAPI *api.API, jwtSecret string, logger *slog.Logger) http.Hand
 	router.Use(api.RecoveryLoggingMiddleware(logger))
 
 	router.Get("/_info", appAPI.HandleInfo)
+	router.Handle("/metrics", promhttp.Handler())
 	router.Post("/dummyLogin", appAPI.HandleDummyLogin)
 	router.Post("/register", appAPI.HandleRegister)
 	router.Post("/login", appAPI.HandleLogin)
