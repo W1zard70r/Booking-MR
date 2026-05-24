@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 	"room-booking/pkg/auth"
@@ -50,6 +51,7 @@ func (uc *userUC) Register(ctx context.Context, email, password, role string) (*
 		"email", user.Email,
 		"role", user.Role,
 	)
+	metrics.RecordBusinessEvent("user_registered")
 
 	return user, nil
 }
@@ -75,6 +77,7 @@ func (uc *userUC) Login(ctx context.Context, email, password string) (string, er
 		"user_id", user.ID,
 		"role", user.Role,
 	)
+	metrics.RecordBusinessEvent("user_logged_in")
 
 	return token, nil
 }

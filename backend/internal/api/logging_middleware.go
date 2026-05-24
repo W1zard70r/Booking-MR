@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"room-booking/internal/metrics"
 )
 
 type statusRecorder struct {
@@ -43,13 +45,16 @@ func RequestLoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handl
 				status = http.StatusOK
 			}
 
+			duration := time.Since(startedAt)
+			metrics.RecordHTTPRequest(r.Method, r.URL.Path, status, duration)
+
 			logger.InfoContext(
 				r.Context(),
 				"http_request_completed",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", status,
-				"duration_ms", time.Since(startedAt).Milliseconds(),
+				"duration_ms", duration.Milliseconds(),
 				"bytes", recorder.bytes,
 				"remote_addr", r.RemoteAddr,
 				"user_agent", r.UserAgent(),

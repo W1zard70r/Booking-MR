@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 )
@@ -38,6 +39,7 @@ func (uc *roomUC) CreateRoom(ctx context.Context, room *models.Room) error {
 		"name", room.Name,
 		"capacity", room.Capacity,
 	)
+	metrics.RecordBusinessEvent("room_created")
 
 	return nil
 }
