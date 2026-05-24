@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"room-booking/internal/events"
 	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
@@ -29,14 +30,29 @@ type BookingUseCase interface {
 type bookingUC struct {
 	bookingRepo repository.BookingRepository
 	slotRepo    repository.SlotRepository
+	publisher   events.Publisher
 	logger      *slog.Logger
 }
 
-func NewBookingUseCase(bRepo repository.BookingRepository, sRepo repository.SlotRepository, logger ...*slog.Logger) BookingUseCase {
+func NewBookingUseCase(bRepo repository.BookingRepository, sRepo repository.SlotRepository, opts ...interface{}) BookingUseCase {
+	var publisher events.Publisher = events.NoopPublisher{}
+	var logger *slog.Logger
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case events.Publisher:
+			if v != nil {
+				publisher = v
+			}
+		case *slog.Logger:
+			logger = v
+		}
+	}
+
 	return &bookingUC{
 		bookingRepo: bRepo,
 		slotRepo:    sRepo,
-		logger:      resolveLogger(logger),
+		publisher:   publisher,
+		logger:      resolveLogger([]*slog.Logger{logger}),
 	}
 }
 
@@ -61,7 +77,7 @@ func (uc *bookingUC) CreateBooking(ctx context.Context, userID, slotID string, c
 	booking := &models.Booking{
 		UserID:         userID,
 		SlotID:         slotID,
-		Status:         "active",
+		Status:         "processing",
 		ConferenceLink: confLink,
 	}
 
@@ -81,6 +97,21 @@ func (uc *bookingUC) CreateBooking(ctx context.Context, userID, slotID string, c
 		"conference_link_requested", createConf,
 		"conference_link_created", booking.ConferenceLink != nil,
 	)
+	conferenceLinkCreated := booking.ConferenceLink != nil
+	if err := uc.publisher.PublishBookingEvent(ctx, events.BookingEvent{
+		EventType:             events.BookingCreatedEvent,
+		BookingID:             booking.ID,
+		UserID:                booking.UserID,
+		SlotID:                booking.SlotID,
+		OccurredAt:            time.Now().UTC(),
+		RoomID:                slot.RoomID,
+		SlotStart:             &slot.StartTime,
+		SlotEnd:               &slot.EndTime,
+		ConferenceLinkCreated: &conferenceLinkCreated,
+		NewStatus:             booking.Status,
+	}); err != nil {
+		uc.logger.ErrorContext(ctx, "booking_event_publish_failed", "event_type", events.BookingCreatedEvent, "booking_id", booking.ID, "error", err)
+	}
 	metrics.RecordBusinessEvent("booking_created")
 
 	return booking, nil
@@ -103,6 +134,7 @@ func (uc *bookingUC) CancelBooking(ctx context.Context, userID, bookingID string
 		return booking, nil
 	}
 
+	previousStatus := booking.Status
 	if err := uc.bookingRepo.UpdateStatus(ctx, bookingID, "cancelled"); err != nil {
 		return nil, err
 	}
@@ -115,6 +147,17 @@ func (uc *bookingUC) CancelBooking(ctx context.Context, userID, bookingID string
 		"user_id", booking.UserID,
 		"slot_id", booking.SlotID,
 	)
+	if err := uc.publisher.PublishBookingEvent(ctx, events.BookingEvent{
+		EventType:      events.BookingCancelledEvent,
+		BookingID:      booking.ID,
+		UserID:         booking.UserID,
+		SlotID:         booking.SlotID,
+		OccurredAt:     time.Now().UTC(),
+		PreviousStatus: previousStatus,
+		NewStatus:      booking.Status,
+	}); err != nil {
+		uc.logger.ErrorContext(ctx, "booking_event_publish_failed", "event_type", events.BookingCancelledEvent, "booking_id", booking.ID, "error", err)
+	}
 	metrics.RecordBusinessEvent("booking_cancelled")
 
 	return booking, nil

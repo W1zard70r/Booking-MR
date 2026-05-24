@@ -55,7 +55,7 @@ func (r *slotPG) GetAvailable(ctx context.Context, roomID string, date time.Time
 	query := `
 		SELECT s.id, s.room_id, s.start_time, s.end_time
 		FROM slots s
-		LEFT JOIN bookings b ON s.id = b.slot_id AND b.status = 'active'
+		LEFT JOIN bookings b ON s.id = b.slot_id AND b.status IN ('processing', 'active')
 		WHERE s.room_id = $1 
 		  AND s.start_time >= $2 
 		  AND s.start_time < $3

@@ -61,6 +61,19 @@ func (r *bookingPG) UpdateStatus(ctx context.Context, id string, status string) 
 	return err
 }
 
+func (r *bookingPG) UpdateStatusIfCurrent(ctx context.Context, id string, currentStatus string, newStatus string) (bool, error) {
+	query := `UPDATE bookings SET status = $1 WHERE id = $2 AND status = $3`
+	result, err := r.db.ExecContext(ctx, query, newStatus, id, currentStatus)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rowsAffected > 0, nil
+}
+
 func (r *bookingPG) GetList(ctx context.Context, limit, offset int) ([]models.Booking, int, error) {
 	var total int
 	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM bookings`).Scan(&total)

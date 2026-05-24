@@ -15,6 +15,19 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: booking_rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -23,6 +36,8 @@ services:
     restart: on-failure
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     environment:
       - DB_HOST=db
@@ -34,6 +49,26 @@ services:
       - SERVER_PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
+      - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
+
+  processor:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: booking_processor
+    command: ["./processor"]
+    restart: on-failure
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
+      - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
 
   frontend:
     build:
