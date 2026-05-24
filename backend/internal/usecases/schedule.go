@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 )
@@ -69,6 +70,7 @@ func (uc *scheduleUC) CreateSchedule(ctx context.Context, schedule *models.Sched
 		"end_time", schedule.EndTime,
 		"generated_slots", generatedSlots,
 	)
+	metrics.RecordBusinessEvent("schedule_created")
 
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"room-booking/internal/metrics"
 	"room-booking/internal/models"
 	"room-booking/internal/repository"
 )
@@ -80,6 +81,7 @@ func (uc *bookingUC) CreateBooking(ctx context.Context, userID, slotID string, c
 		"conference_link_requested", createConf,
 		"conference_link_created", booking.ConferenceLink != nil,
 	)
+	metrics.RecordBusinessEvent("booking_created")
 
 	return booking, nil
 }
@@ -113,6 +115,7 @@ func (uc *bookingUC) CancelBooking(ctx context.Context, userID, bookingID string
 		"user_id", booking.UserID,
 		"slot_id", booking.SlotID,
 	)
+	metrics.RecordBusinessEvent("booking_cancelled")
 
 	return booking, nil
 }
