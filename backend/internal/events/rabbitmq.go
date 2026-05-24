@@ -15,6 +15,8 @@ type RabbitMQPublisher struct {
 	queue   string
 }
 
+type BookingEventHandler func(ctx context.Context, event BookingEvent) error
+
 func NewRabbitMQPublisher(url string, queue string) (*RabbitMQPublisher, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
@@ -62,7 +64,7 @@ func (p *RabbitMQPublisher) Close() error {
 	return p.conn.Close()
 }
 
-func StartBookingEventConsumer(ctx context.Context, url string, queue string, logger *slog.Logger) (func() error, error) {
+func StartBookingEventConsumer(ctx context.Context, url string, queue string, consumerName string, logger *slog.Logger, handler BookingEventHandler) (func() error, error) {
 	conn, err := amqp.Dial(url)
 	if err != nil {
 		return nil, err
@@ -80,7 +82,13 @@ func StartBookingEventConsumer(ctx context.Context, url string, queue string, lo
 		return nil, err
 	}
 
-	deliveries, err := channel.Consume(queue, "booking-backend-logger", true, false, false, false, nil)
+	if err := channel.Qos(1, 0, false); err != nil {
+		_ = channel.Close()
+		_ = conn.Close()
+		return nil, err
+	}
+
+	deliveries, err := channel.Consume(queue, consumerName, false, false, false, false, nil)
 	if err != nil {
 		_ = channel.Close()
 		_ = conn.Close()
@@ -100,6 +108,7 @@ func StartBookingEventConsumer(ctx context.Context, url string, queue string, lo
 				var event BookingEvent
 				if err := json.Unmarshal(delivery.Body, &event); err != nil {
 					logger.ErrorContext(ctx, "booking_event_decode_failed", "error", err)
+					_ = delivery.Nack(false, false)
 					continue
 				}
 
@@ -111,6 +120,18 @@ func StartBookingEventConsumer(ctx context.Context, url string, queue string, lo
 					"user_id", event.UserID,
 					"slot_id", event.SlotID,
 				)
+
+				if handler != nil {
+					if err := handler(ctx, event); err != nil {
+						logger.ErrorContext(ctx, "booking_event_handle_failed", "event_type", event.EventType, "booking_id", event.BookingID, "error", err)
+						_ = delivery.Nack(false, true)
+						continue
+					}
+				}
+
+				if err := delivery.Ack(false); err != nil {
+					logger.ErrorContext(ctx, "booking_event_ack_failed", "event_type", event.EventType, "booking_id", event.BookingID, "error", err)
+				}
 			}
 		}
 	}()

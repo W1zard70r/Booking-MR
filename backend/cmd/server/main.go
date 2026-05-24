@@ -66,7 +66,14 @@ func main() {
 		}()
 		eventPublisher = rabbitPublisher
 
-		closeConsumer, err := events.StartBookingEventConsumer(context.Background(), cfg.RabbitMQ.URL, cfg.RabbitMQ.BookingEventsQueue, logger)
+		closeConsumer, err := events.StartBookingEventConsumer(
+			context.Background(),
+			cfg.RabbitMQ.URL,
+			cfg.RabbitMQ.BookingStatusEventsQueue,
+			"booking-backend-status-updater",
+			logger,
+			handleBookingStatusEvent(repo.Booking, logger),
+		)
 		if err != nil {
 			logger.Error("rabbitmq_consumer_init_failed", "error", err)
 			os.Exit(1)
@@ -76,7 +83,7 @@ func main() {
 				logger.Error("rabbitmq_consumer_close_failed", "error", err)
 			}
 		}()
-		logger.Info("rabbitmq_enabled", "queue", cfg.RabbitMQ.BookingEventsQueue)
+		logger.Info("rabbitmq_enabled", "booking_queue", cfg.RabbitMQ.BookingEventsQueue, "status_queue", cfg.RabbitMQ.BookingStatusEventsQueue)
 	} else {
 		logger.Info("rabbitmq_disabled", "reason", "RABBITMQ_URL is empty")
 	}
@@ -126,7 +133,7 @@ func runStartupMigrations(ctx context.Context, db *sql.DB, logger *slog.Logger) 
 	}
 	if exists {
 		logger.DebugContext(ctx, "startup_migrations_skipped", "reason", "schema_exists")
-		return nil
+		return ensureBookingProcessingSchema(ctx, db, logger)
 	}
 
 	migrationPath := filepath.Join("migrations", "000001_init.up.sql")
@@ -139,6 +146,24 @@ func runStartupMigrations(ctx context.Context, db *sql.DB, logger *slog.Logger) 
 	}
 
 	logger.InfoContext(ctx, "startup_migrations_applied", "migration", migrationPath)
+	return ensureBookingProcessingSchema(ctx, db, logger)
+}
+
+func ensureBookingProcessingSchema(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
+	statements := []string{
+		`ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_status_check`,
+		`ALTER TABLE bookings ADD CONSTRAINT bookings_status_check CHECK (status IN ('processing', 'active', 'cancelled'))`,
+		`DROP INDEX IF EXISTS idx_unique_active_booking`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_booking ON bookings (slot_id) WHERE status IN ('processing', 'active')`,
+	}
+
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+
+	logger.DebugContext(ctx, "booking_processing_schema_ensured")
 	return nil
 }
 
@@ -154,6 +179,47 @@ func tableExists(ctx context.Context, db *sql.DB, tableName string) (bool, error
 		tableName,
 	).Scan(&exists)
 	return exists, err
+}
+
+func handleBookingStatusEvent(bookingRepo repository.BookingRepository, logger *slog.Logger) events.BookingEventHandler {
+	return func(ctx context.Context, event events.BookingEvent) error {
+		if event.EventType != events.BookingStatusChanged {
+			return nil
+		}
+		if event.NewStatus == "" {
+			logger.WarnContext(ctx, "booking_status_event_ignored", "reason", "empty_new_status", "booking_id", event.BookingID)
+			return nil
+		}
+
+		currentStatus := event.PreviousStatus
+		if currentStatus == "" {
+			currentStatus = "processing"
+		}
+
+		updated, err := bookingRepo.UpdateStatusIfCurrent(ctx, event.BookingID, currentStatus, event.NewStatus)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			logger.InfoContext(
+				ctx,
+				"booking_status_update_skipped",
+				"booking_id", event.BookingID,
+				"expected_status", currentStatus,
+				"new_status", event.NewStatus,
+			)
+			return nil
+		}
+
+		logger.InfoContext(
+			ctx,
+			"booking_status_updated",
+			"booking_id", event.BookingID,
+			"previous_status", currentStatus,
+			"new_status", event.NewStatus,
+		)
+		return nil
+	}
 }
 
 func newRouter(appAPI *api.API, jwtSecret string, logger *slog.Logger) http.Handler {

@@ -13,16 +13,18 @@ COPY migrations/ ./migrations
 COPY scripts/ ./scripts
 
 # Собираем приложение
-RUN go build -o main cmd/server/main.go
+RUN go build -o server cmd/server/main.go \
+    && go build -o processor cmd/processor/main.go
 
 # Финальный образ
 FROM alpine:latest
 WORKDIR /app
 
 # Копируем бинарник и необходимые папки
-COPY --from=builder /app/main .
+COPY --from=builder /app/server .
+COPY --from=builder /app/processor .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/scripts ./scripts
 
 EXPOSE 8080
-CMD ["./main"]
+CMD ["./server"]

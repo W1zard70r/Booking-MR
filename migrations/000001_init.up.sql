@@ -44,10 +44,10 @@ CREATE TABLE bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     slot_id UUID REFERENCES slots(id) ON DELETE CASCADE,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('active', 'cancelled')),
+    status VARCHAR(50) NOT NULL CHECK (status IN ('processing', 'active', 'cancelled')),
     conference_link TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Защита от двойного бронирования!
-CREATE UNIQUE INDEX idx_unique_active_booking ON bookings (slot_id) WHERE status = 'active';
+CREATE UNIQUE INDEX idx_unique_active_booking ON bookings (slot_id) WHERE status IN ('processing', 'active');

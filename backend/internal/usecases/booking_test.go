@@ -37,6 +37,14 @@ func (r *fakeBookingRepo) UpdateStatus(ctx context.Context, id string, status st
 	return nil
 }
 
+func (r *fakeBookingRepo) UpdateStatusIfCurrent(ctx context.Context, id string, currentStatus string, newStatus string) (bool, error) {
+	if r.booking == nil || r.booking.ID != id || r.booking.Status != currentStatus {
+		return false, nil
+	}
+	r.booking.Status = newStatus
+	return true, nil
+}
+
 func (r *fakeBookingRepo) GetList(ctx context.Context, limit, offset int) ([]models.Booking, int, error) {
 	return nil, 0, nil
 }
@@ -89,6 +97,9 @@ func TestCreateBookingPublishesCreatedEvent(t *testing.T) {
 	if booking.ID == "" {
 		t.Fatal("expected booking ID to be set")
 	}
+	if booking.Status != "processing" {
+		t.Fatalf("expected processing status, got %s", booking.Status)
+	}
 	if len(publisher.events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(publisher.events))
 	}
@@ -99,6 +110,9 @@ func TestCreateBookingPublishesCreatedEvent(t *testing.T) {
 	}
 	if event.BookingID != booking.ID || event.UserID != "user-1" || event.SlotID != "slot-1" {
 		t.Fatalf("unexpected event payload: %+v", event)
+	}
+	if event.NewStatus != "processing" {
+		t.Fatalf("expected newStatus=processing: %+v", event)
 	}
 	if event.RoomID != "room-1" || event.SlotStart == nil || event.SlotEnd == nil {
 		t.Fatalf("expected slot details in event: %+v", event)

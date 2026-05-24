@@ -63,6 +63,7 @@ type BookingRepository interface {
 	Create(ctx context.Context, booking *models.Booking) error
 	GetByID(ctx context.Context, id string) (*models.Booking, error)
 	UpdateStatus(ctx context.Context, id string, status string) error
+	UpdateStatusIfCurrent(ctx context.Context, id string, currentStatus string, newStatus string) (bool, error)
 	// GetList - для админа (с пагинацией)
 	GetList(ctx context.Context, limit, offset int) ([]models.Booking, int, error)
 	// GetMyFuture - для юзера (только его и только будущие)

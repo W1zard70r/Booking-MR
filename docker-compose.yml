@@ -51,6 +51,24 @@ services:
       - LOG_FORMAT=${LOG_FORMAT:-json}
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
+      - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
+
+  processor:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: booking_processor
+    command: ["./processor"]
+    restart: on-failure
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
+      - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
 
   frontend:
     build:

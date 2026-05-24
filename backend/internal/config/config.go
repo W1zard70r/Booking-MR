@@ -36,8 +36,9 @@ type LoggingConfig struct {
 }
 
 type RabbitMQConfig struct {
-	URL                string
-	BookingEventsQueue string
+	URL                      string
+	BookingEventsQueue       string
+	BookingStatusEventsQueue string
 }
 
 func Load() Config {
@@ -61,8 +62,9 @@ func Load() Config {
 			Format: getEnv("LOG_FORMAT", "json"),
 		},
 		RabbitMQ: RabbitMQConfig{
-			URL:                getEnv("RABBITMQ_URL", ""),
-			BookingEventsQueue: getEnv("RABBITMQ_BOOKING_EVENTS_QUEUE", "booking-events"),
+			URL:                      getEnv("RABBITMQ_URL", ""),
+			BookingEventsQueue:       getEnv("RABBITMQ_BOOKING_EVENTS_QUEUE", "booking-events"),
+			BookingStatusEventsQueue: getEnv("RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE", "booking-status-events"),
 		},
 	}
 }

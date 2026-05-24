@@ -8,6 +8,7 @@ import (
 const (
 	BookingCreatedEvent   = "booking.created"
 	BookingCancelledEvent = "booking.cancelled"
+	BookingStatusChanged  = "booking.status_changed"
 )
 
 type BookingEvent struct {
@@ -20,6 +21,8 @@ type BookingEvent struct {
 	SlotStart             *time.Time `json:"slotStart,omitempty"`
 	SlotEnd               *time.Time `json:"slotEnd,omitempty"`
 	ConferenceLinkCreated *bool      `json:"conferenceLinkCreated,omitempty"`
+	PreviousStatus        string     `json:"previousStatus,omitempty"`
+	NewStatus             string     `json:"newStatus,omitempty"`
 }
 
 type Publisher interface {
