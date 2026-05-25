@@ -52,6 +52,13 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
       - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
+      - SMTP_ENABLED=${SMTP_ENABLED:-false}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_USE_TLS=${SMTP_USE_TLS:-true}
 
   processor:
     build:
@@ -69,6 +76,22 @@ services:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - RABBITMQ_BOOKING_EVENTS_QUEUE=${RABBITMQ_BOOKING_EVENTS_QUEUE:-booking-events}
       - RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE=${RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE:-booking-status-events}
+
+  loadgen:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: booking_loadgen
+    command: ["./loadgen"]
+    restart: on-failure
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_URL=http://backend:8080
+      - LOADGEN_INTERVAL=${LOADGEN_INTERVAL:-2s}
+      - LOADGEN_ADMIN_EMAIL=${LOADGEN_ADMIN_EMAIL:-loadgen-admin@example.com}
+      - LOADGEN_USER_EMAIL=${LOADGEN_USER_EMAIL:-loadgen-user@example.com}
+      - LOADGEN_PASSWORD=${LOADGEN_PASSWORD:-loadgen-password}
 
   frontend:
     build:

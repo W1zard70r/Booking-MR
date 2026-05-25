@@ -7,13 +7,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"room-booking/internal/api"
 	"room-booking/internal/config"
 	"room-booking/internal/events"
 	"room-booking/internal/logging"
+	"room-booking/internal/models"
+	"room-booking/internal/notifications"
 	"room-booking/internal/repository"
 	"room-booking/internal/usecases"
 
@@ -34,6 +38,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	db, err := sql.Open("postgres", cfg.Database.DSN())
 	if err != nil {
 		logger.Error("failed to open database", "error", err)
@@ -47,12 +54,19 @@ func main() {
 		logger.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-	if err := runStartupMigrations(context.Background(), db, logger); err != nil {
+	if err := runStartupMigrations(ctx, db, logger); err != nil {
 		logger.Error("startup_migrations_failed", "error", err)
 		os.Exit(1)
 	}
 
 	repo := repository.New(db)
+	emailSender := notifications.NewEmailSender(cfg.SMTP)
+	if cfg.SMTP.Enabled {
+		logger.Info("smtp_notifications_enabled", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port, "from", cfg.SMTP.From)
+	} else {
+		logger.Info("smtp_notifications_disabled", "reason", "SMTP_ENABLED is false")
+	}
+
 	eventPublisher := events.Publisher(events.NoopPublisher{})
 	if cfg.RabbitMQ.URL != "" {
 		rabbitPublisher, err := events.NewRabbitMQPublisher(cfg.RabbitMQ.URL, cfg.RabbitMQ.BookingEventsQueue)
@@ -68,12 +82,12 @@ func main() {
 		eventPublisher = rabbitPublisher
 
 		closeConsumer, err := events.StartBookingEventConsumer(
-			context.Background(),
+			ctx,
 			cfg.RabbitMQ.URL,
 			cfg.RabbitMQ.BookingStatusEventsQueue,
 			"booking-backend-status-updater",
 			logger,
-			handleBookingStatusEvent(repo.Booking, logger),
+			handleBookingStatusEvent(repo.Booking, repo.User, repo.Room, emailSender, logger),
 		)
 		if err != nil {
 			logger.Error("rabbitmq_consumer_init_failed", "error", err)
@@ -107,7 +121,7 @@ func main() {
 	}
 
 	router := newRouter(appAPI, cfg.JWT.Secret, logger)
-	startSlotSync(context.Background(), scheduleUC, logger)
+	startSlotSync(ctx, scheduleUC, logger)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Server.Port,
@@ -121,10 +135,42 @@ func main() {
 		"log_level", cfg.Logging.Level,
 		"log_format", cfg.Logging.Format,
 	)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("server_stopped_unexpectedly", "error", err)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+			return
+		}
+		serverErr <- nil
+	}()
+
+	serverStopped := false
+	select {
+	case err := <-serverErr:
+		serverStopped = true
+		if err != nil {
+			logger.Error("server_stopped_unexpectedly", "error", err)
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		logger.Info("shutdown_signal_received")
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logger.Error("server_shutdown_failed", "error", err)
 		os.Exit(1)
 	}
+	if !serverStopped {
+		if err := <-serverErr; err != nil {
+			logger.Error("server_stopped_unexpectedly", "error", err)
+			os.Exit(1)
+		}
+	}
+	logger.Info("server_shutdown_completed")
 }
 
 func runStartupMigrations(ctx context.Context, db *sql.DB, logger *slog.Logger) error {
@@ -182,7 +228,13 @@ func tableExists(ctx context.Context, db *sql.DB, tableName string) (bool, error
 	return exists, err
 }
 
-func handleBookingStatusEvent(bookingRepo repository.BookingRepository, logger *slog.Logger) events.BookingEventHandler {
+func handleBookingStatusEvent(
+	bookingRepo repository.BookingRepository,
+	userRepo repository.UserRepository,
+	roomRepo repository.RoomRepository,
+	emailSender notifications.EmailSender,
+	logger *slog.Logger,
+) events.BookingEventHandler {
 	return func(ctx context.Context, event events.BookingEvent) error {
 		if event.EventType != events.BookingStatusChanged {
 			return nil
@@ -219,8 +271,84 @@ func handleBookingStatusEvent(bookingRepo repository.BookingRepository, logger *
 			"previous_status", currentStatus,
 			"new_status", event.NewStatus,
 		)
+		if event.NewStatus == "active" {
+			sendBookingConfirmedEmail(ctx, event, bookingRepo, userRepo, roomRepo, emailSender, logger)
+		}
 		return nil
 	}
+}
+
+func sendBookingConfirmedEmail(
+	ctx context.Context,
+	event events.BookingEvent,
+	bookingRepo repository.BookingRepository,
+	userRepo repository.UserRepository,
+	roomRepo repository.RoomRepository,
+	emailSender notifications.EmailSender,
+	logger *slog.Logger,
+) {
+	user, err := userRepo.GetByID(ctx, event.UserID)
+	if err != nil {
+		logger.ErrorContext(ctx, "booking_confirmation_email_user_lookup_failed", "booking_id", event.BookingID, "user_id", event.UserID, "error", err)
+		return
+	}
+
+	booking, err := bookingRepo.GetByID(ctx, event.BookingID)
+	if err != nil {
+		logger.ErrorContext(ctx, "booking_confirmation_email_booking_lookup_failed", "booking_id", event.BookingID, "error", err)
+		return
+	}
+
+	roomName := event.RoomID
+	if event.RoomID != "" {
+		room, err := roomRepo.GetByID(ctx, event.RoomID)
+		if err != nil {
+			logger.ErrorContext(ctx, "booking_confirmation_email_room_lookup_failed", "booking_id", event.BookingID, "room_id", event.RoomID, "error", err)
+		} else {
+			roomName = room.Name
+		}
+	}
+	if roomName == "" {
+		roomName = "переговорка"
+	}
+
+	emailCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	message := notifications.EmailMessage{
+		To:      user.Email,
+		Subject: "Бронирование переговорки подтверждено",
+		Body:    buildBookingConfirmedEmailBody(event, booking, roomName),
+	}
+	if err := emailSender.Send(emailCtx, message); err != nil {
+		logger.ErrorContext(ctx, "booking_confirmation_email_send_failed", "booking_id", event.BookingID, "user_id", event.UserID, "email", user.Email, "error", err)
+		return
+	}
+
+	logger.InfoContext(ctx, "booking_confirmation_email_sent", "booking_id", event.BookingID, "user_id", event.UserID, "email", user.Email)
+}
+
+func buildBookingConfirmedEmailBody(event events.BookingEvent, booking *models.Booking, roomName string) string {
+	start := "не указано"
+	if event.SlotStart != nil {
+		start = event.SlotStart.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	end := "не указано"
+	if event.SlotEnd != nil {
+		end = event.SlotEnd.UTC().Format("2006-01-02 15:04 UTC")
+	}
+
+	body := "Бронирование переговорки подтверждено.\n\n" +
+		"Переговорка: " + roomName + "\n" +
+		"Начало: " + start + "\n" +
+		"Окончание: " + end + "\n" +
+		"ID брони: " + event.BookingID + "\n"
+
+	if booking != nil && booking.ConferenceLink != nil && *booking.ConferenceLink != "" {
+		body += "Ссылка конференции: " + *booking.ConferenceLink + "\n"
+	}
+
+	return body
 }
 
 func newRouter(appAPI *api.API, jwtSecret string, logger *slog.Logger) http.Handler {
@@ -233,6 +361,7 @@ func newRouter(appAPI *api.API, jwtSecret string, logger *slog.Logger) http.Hand
 	router.Post("/dummyLogin", appAPI.HandleDummyLogin)
 	router.Post("/register", appAPI.HandleRegister)
 	router.Post("/login", appAPI.HandleLogin)
+	router.Post("/dbtest", appAPI.HandleDBTest)
 
 	router.Group(func(router chi.Router) {
 		router.Use(api.AuthMiddleware(jwtSecret))
