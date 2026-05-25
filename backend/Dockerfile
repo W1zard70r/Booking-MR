@@ -14,7 +14,8 @@ COPY scripts/ ./scripts
 
 # Собираем приложение
 RUN go build -o server cmd/server/main.go \
-    && go build -o processor cmd/processor/main.go
+    && go build -o processor cmd/processor/main.go \
+    && go build -o loadgen cmd/loadgen/main.go
 
 # Финальный образ
 FROM alpine:latest
@@ -23,6 +24,7 @@ WORKDIR /app
 # Копируем бинарник и необходимые папки
 COPY --from=builder /app/server .
 COPY --from=builder /app/processor .
+COPY --from=builder /app/loadgen .
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/scripts ./scripts
 
