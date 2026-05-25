@@ -79,13 +79,17 @@ func handleBookingCreated(publisher events.Publisher, logger *slog.Logger) event
 		time.Sleep(processingDelay)
 
 		statusEvent := events.BookingEvent{
-			EventType:      events.BookingStatusChanged,
-			BookingID:      event.BookingID,
-			UserID:         event.UserID,
-			SlotID:         event.SlotID,
-			OccurredAt:     time.Now().UTC(),
-			PreviousStatus: "processing",
-			NewStatus:      "active",
+			EventType:             events.BookingStatusChanged,
+			BookingID:             event.BookingID,
+			UserID:                event.UserID,
+			SlotID:                event.SlotID,
+			OccurredAt:            time.Now().UTC(),
+			RoomID:                event.RoomID,
+			SlotStart:             event.SlotStart,
+			SlotEnd:               event.SlotEnd,
+			ConferenceLinkCreated: event.ConferenceLinkCreated,
+			PreviousStatus:        "processing",
+			NewStatus:             "active",
 		}
 		if err := publisher.PublishBookingEvent(ctx, statusEvent); err != nil {
 			return err

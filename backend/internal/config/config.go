@@ -11,6 +11,7 @@ type Config struct {
 	JWT      JWTConfig
 	Logging  LoggingConfig
 	RabbitMQ RabbitMQConfig
+	SMTP     SMTPConfig
 }
 
 type ServerConfig struct {
@@ -41,6 +42,16 @@ type RabbitMQConfig struct {
 	BookingStatusEventsQueue string
 }
 
+type SMTPConfig struct {
+	Enabled  bool
+	Host     string
+	Port     string
+	Username string
+	Password string
+	From     string
+	UseTLS   bool
+}
+
 func Load() Config {
 	return Config{
 		Server: ServerConfig{
@@ -66,6 +77,15 @@ func Load() Config {
 			BookingEventsQueue:       getEnv("RABBITMQ_BOOKING_EVENTS_QUEUE", "booking-events"),
 			BookingStatusEventsQueue: getEnv("RABBITMQ_BOOKING_STATUS_EVENTS_QUEUE", "booking-status-events"),
 		},
+		SMTP: SMTPConfig{
+			Enabled:  getEnvBool("SMTP_ENABLED", false),
+			Host:     getEnv("SMTP_HOST", ""),
+			Port:     getEnv("SMTP_PORT", "587"),
+			Username: getEnv("SMTP_USERNAME", ""),
+			Password: getEnv("SMTP_PASSWORD", ""),
+			From:     getEnv("SMTP_FROM", ""),
+			UseTLS:   getEnvBool("SMTP_USE_TLS", true),
+		},
 	}
 }
 
@@ -86,4 +106,12 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value == "true" || value == "1" || value == "yes"
 }
